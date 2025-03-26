@@ -29,6 +29,10 @@ class ExcelHandler:
     def write_backtest_results(results_df, output_path):
         """将回测结果写入Excel文件"""
         try:
+            # 处理日期格式，只保留日期部分
+            if '日期' in results_df.columns:
+                results_df['日期'] = pd.to_datetime(results_df['日期']).dt.date
+                
             # 创建一个Excel Writer对象
             writer = pd.ExcelWriter(output_path, engine='openpyxl')
             

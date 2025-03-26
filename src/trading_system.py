@@ -26,6 +26,13 @@ class Portfolio:
         self.position = 0                 # 当前持仓数量
         self.transactions = []            # 交易记录
         self.initial_buy = True           # 标记是否为初始建仓
+
+        # 跟踪累计成本和盈利
+        self.total_investment = 0          # 总投入资金（买入成本+税费-卖出净收入）
+        self.total_buy_cost = 0            # 总买入成本
+        self.total_buy_tax = 0             # 总买入税费
+        self.total_sell_income = 0         # 总卖出收入
+        self.total_sell_tax = 0            # 总卖出税费
         
         # 添加初始状态记录
         self.transactions.append({
@@ -39,7 +46,10 @@ class Portfolio:
             '现金': self.cash,
             '持仓': self.position,
             '市值': 0,
-            '总资产': self.cash
+            '总资产': self.cash,
+            '累计投入': 0,
+            '累计盈亏': 0,
+            '盈亏率': 0
         })
         
         # 税费配置
@@ -101,8 +111,19 @@ class Portfolio:
             tax = self.calculate_buy_tax(price, shares)
             total_cost = cost + tax
         
+        # 更新资金状态
         self.cash -= total_cost
         self.position += shares
+        
+        # 更新累计数据
+        self.total_buy_cost += cost
+        self.total_buy_tax += tax
+        self.total_investment += total_cost
+        
+        # 计算当前盈亏
+        current_value = price * self.position
+        current_profit = current_value - self.total_investment
+        profit_ratio = current_profit / self.total_investment * 100 if self.total_investment > 0 else 0
         
         # 记录交易
         self.transactions.append({
@@ -115,8 +136,11 @@ class Portfolio:
             '总成本': total_cost,
             '现金': self.cash,
             '持仓': self.position,
-            '市值': price * self.position,
-            '总资产': self.cash + price * self.position
+            '市值': current_value,
+            '总资产': self.cash + current_value,
+            '累计投入': self.total_investment,
+            '累计盈亏': current_profit,
+            '盈亏率': profit_ratio
         })
         
         return True, f"买入 {shares} 股，价格: {price:.2f}，税费: {tax:.2f}"
@@ -133,8 +157,23 @@ class Portfolio:
         tax = self.calculate_sell_tax(price, shares)
         net_income = income - tax
         
+        # 更新资金状态
         self.cash += net_income
         self.position -= shares
+        
+        # 更新累计数据
+        self.total_sell_income += income
+        self.total_sell_tax += tax
+        self.total_investment -= net_income  # 卖出收回部分投资
+        
+        # 确保total_investment不会变为负值
+        if self.total_investment < 0:
+            self.total_investment = 0
+            
+        # 计算当前盈亏
+        current_value = price * self.position
+        current_profit = current_value - self.total_investment + self.total_sell_income - self.total_buy_cost
+        profit_ratio = current_profit / self.total_buy_cost * 100 if self.total_buy_cost > 0 else 0
         
         # 记录交易
         self.transactions.append({
@@ -147,8 +186,11 @@ class Portfolio:
             '净收入': net_income,
             '现金': self.cash,
             '持仓': self.position,
-            '市值': price * self.position,
-            '总资产': self.cash + price * self.position
+            '市值': current_value,
+            '总资产': self.cash + current_value,
+            '累计投入': self.total_investment,
+            '累计盈亏': current_profit,
+            '盈亏率': profit_ratio
         })
         
         return True, f"卖出 {shares} 股，价格: {price:.2f}，税费: {tax:.2f}"
@@ -156,6 +198,16 @@ class Portfolio:
     def update(self, date, price):
         """更新每日持仓价值"""
         if not self.transactions or self.transactions[-1]['日期'] != date:
+            current_value = price * self.position
+            
+            # 计算当前盈亏
+            current_profit = 0
+            profit_ratio = 0
+            
+            if self.position > 0:
+                current_profit = current_value - self.total_investment
+                profit_ratio = current_profit / self.total_investment * 100 if self.total_investment > 0 else 0
+            
             self.transactions.append({
                 '日期': date,
                 '操作': '持有',
@@ -165,8 +217,11 @@ class Portfolio:
                 '税费': 0,
                 '现金': self.cash,
                 '持仓': self.position,
-                '市值': price * self.position,
-                '总资产': self.cash + price * self.position
+                '市值': current_value,
+                '总资产': self.cash + current_value,
+                '累计投入': self.total_investment,
+                '累计盈亏': current_profit,
+                '盈亏率': profit_ratio
             })
         
     def get_transactions_df(self):
@@ -181,37 +236,51 @@ class Portfolio:
         buy_count = len(df[df['操作'] == '买入'])
         sell_count = len(df[df['操作'] == '卖出'])
         
-        # 总税费
+        # 税费
         total_tax = df['税费'].sum()
         
-        # 总资产的最高和最低点
+        # 资产价值
         max_asset = df['总资产'].max()
         min_asset = df['总资产'].min()
         
-        # 计算每笔交易的盈亏
-        profit_loss = []
-        last_buy_cost = 0
-        last_buy_shares = 0
+        # 计算最新的盈亏数据
+        latest_row = df.iloc[-1]
+        current_profit = latest_row['累计盈亏']
+        profit_ratio = latest_row['盈亏率']
         
+        # 计算每笔交易的盈亏
+        max_profit_in_single_trade = 0
+        max_loss_in_single_trade = 0
+        
+        buy_records = []
         for idx, row in df.iterrows():
             if row['操作'] == '买入':
-                last_buy_cost = row['总成本'] / row['数量'] if row['数量'] > 0 else 0
-                last_buy_shares += row['数量']
-            elif row['操作'] == '卖出':
-                if last_buy_shares > 0:
-                    # 计算这笔交易的盈亏
-                    sell_price = row['收入'] / row['数量']
-                    cost_basis = last_buy_cost
-                    profit = (sell_price - cost_basis) * row['数量']
-                    profit_loss.append(profit)
-                    # 更新剩余股数
-                    last_buy_shares -= row['数量']
+                buy_records.append({
+                    'price': row['价格'],
+                    'shares': row['数量']
+                })
+            elif row['操作'] == '卖出' and buy_records:
+                # 简单的FIFO计算
+                remaining_shares = row['数量']
+                trade_profit = 0
+                
+                while remaining_shares > 0 and buy_records:
+                    buy_record = buy_records[0]
+                    if buy_record['shares'] <= remaining_shares:
+                        # 全部卖出
+                        trade_profit += (row['价格'] - buy_record['price']) * buy_record['shares']
+                        remaining_shares -= buy_record['shares']
+                        buy_records.pop(0)
+                    else:
+                        # 部分卖出
+                        trade_profit += (row['价格'] - buy_record['price']) * remaining_shares
+                        buy_record['shares'] -= remaining_shares
+                        remaining_shares = 0
+                
+                max_profit_in_single_trade = max(max_profit_in_single_trade, trade_profit)
+                max_loss_in_single_trade = min(max_loss_in_single_trade, trade_profit)
         
-        # 最大盈利和最大亏损
-        max_profit = max(profit_loss) if profit_loss else 0
-        max_loss = min(profit_loss) if profit_loss else 0
-        
-        # 返回结果
+        # 返回统计结果
         return {
             "初始资产": self.initial_cash,
             "最终资产": df.iloc[-1]['总资产'],
@@ -222,8 +291,14 @@ class Portfolio:
             "总税费": total_tax,
             "最高总资产": max_asset,
             "最低总资产": min_asset,
-            "最大盈利": max_profit,
-            "最大亏损": max_loss
+            "当前盈亏": current_profit,
+            "盈亏率": profit_ratio,
+            "总买入成本": self.total_buy_cost,
+            "总卖出收入": self.total_sell_income,
+            "总买入税费": self.total_buy_tax,
+            "总卖出税费": self.total_sell_tax,
+            "单笔最大盈利": max_profit_in_single_trade,
+            "单笔最大亏损": max_loss_in_single_trade
         }
 
 # 交易系统类
@@ -244,7 +319,7 @@ class TradingSystem:
                 break
         
         # 初始建仓
-        date = data.iloc[first_valid_idx]['日期']
+        date = data.iloc[first_valid_idx]['日期'].date() if hasattr(data.iloc[first_valid_idx]['日期'], 'date') else data.iloc[first_valid_idx]['日期']
         price = data.iloc[first_valid_idx]['收盘']
         self.portfolio.buy(date, price, 100)  # 数量无关紧要，会在buy方法中计算
         
