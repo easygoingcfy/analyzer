@@ -29,17 +29,26 @@ class StockDataProvider:
         
         return (time.time() - self._last_update[cache_key]) < self._cache_timeout
     
-    def _get_from_cache(self, cache_key: str) -> Optional[pd.DataFrame]:
+    def _get_from_cache(self, cache_key: str):
         """从缓存获取数据"""
         with self._lock:
             if cache_key in self._cache and self._is_cache_valid(cache_key):
-                return self._cache[cache_key].copy()
+                data = self._cache[cache_key]
+                # 如果是DataFrame，返回副本；否则直接返回
+                if hasattr(data, 'copy'):
+                    return data.copy()
+                else:
+                    return data
         return None
     
-    def _set_cache(self, cache_key: str, data: pd.DataFrame) -> None:
+    def _set_cache(self, cache_key: str, data) -> None:
         """设置缓存"""
         with self._lock:
-            self._cache[cache_key] = data.copy()
+            # 支持DataFrame和字典等不同类型的数据
+            if hasattr(data, 'copy'):
+                self._cache[cache_key] = data.copy()
+            else:
+                self._cache[cache_key] = data
             self._last_update[cache_key] = time.time()
     
     def get_stock_list(self) -> pd.DataFrame:
@@ -236,7 +245,7 @@ class StockDataProvider:
         cache_key = self._get_cache_key("market_data")
         cached_data = self._get_from_cache(cache_key)
         if cached_data is not None:
-            return cached_data.to_dict() if hasattr(cached_data, 'to_dict') else cached_data
+            return cached_data
         
         try:
             market_data = {}

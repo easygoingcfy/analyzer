@@ -2,12 +2,12 @@
   "ui": {
     "theme": "light",
     "window_size": [
-      1427,
-      1079
+      1600,
+      1189
     ],
     "window_position": [
-      715,
-      264
+      234,
+      177
     ],
     "layout_templates": {}
   },
