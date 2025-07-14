@@ -1,0 +1,48 @@
+{
+  "ui": {
+    "theme": "light",
+    "window_size": [
+      1427,
+      1079
+    ],
+    "window_position": [
+      715,
+      264
+    ],
+    "layout_templates": {}
+  },
+  "data": {
+    "update_interval": 1000,
+    "data_sources": {
+      "akshare": true,
+      "tushare": false
+    },
+    "cache_enabled": true,
+    "cache_duration": 300
+  },
+  "strategy": {
+    "max_results": 100,
+    "saved_strategies": {}
+  },
+  "stock_pools": {
+    "my_stocks": [],
+    "watch_list": [],
+    "custom_pools": {}
+  },
+  "display": {
+    "columns": [
+      "代码",
+      "名称",
+      "现价",
+      "涨跌幅",
+      "涨跌额",
+      "成交量",
+      "成交额",
+      "换手率",
+      "市盈率",
+      "市净率"
+    ],
+    "sort_column": "涨跌幅",
+    "sort_order": "desc"
+  }
+}
